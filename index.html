@@ -1,0 +1,443 @@
+<html lang="en">
+<head>
+	<title>Particle Engine (Three.js)</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link rel="stylesheet" href="css/base.css">
+</head>
+<body>
+
+<script src="js/Three.js"></script>
+<script src="js/Detector.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+
+<script src="js/ParticleEngine.js"></script>
+<script src="js/ParticleEngineExamples.js"></script>
+
+<!-- GUI for experimenting with values -->		
+<script type="text/javascript" src="js/DAT.GUI.min.js"></script>
+
+
+
+<!-- ------------------------------------------------------------ -->
+
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px">
+	<canvas width="800" height="300"></canvas>
+	
+</div>
+<script>
+/*
+	Three.js "tutorials by example"
+	Author: Lee Stemkoski
+	Date: July 2013 (three.js v59dev)
+*/
+
+// MAIN
+
+// standard global variables
+var container, scene, camera, camera2, renderer, controls, group;
+var keyboard = new THREEx.KeyboardState();
+var clock = new THREE.Clock();
+
+var vec3 = new THREE.Vector3();
+
+// custom global variables
+var jumpClock;
+var jumpTime = 0.0;
+
+var cube;
+var ship; 
+
+var lookAtPoint = new THREE.Vector3(0,0,-200);
+
+var maxRot, xMax;
+
+var PI = Math.PI;
+
+init();
+animate();
+
+// FUNCTIONS 		
+function init() 
+{
+	// SCENE
+	scene = new THREE.Scene();
+
+	//Group to place all things that's supposed
+	//to follow the ship in the z axis, such as camera, lights, skybox(?!), etc
+	group = new THREE.Object3D();
+	scene.add(group);
+
+
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, 
+		SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, 
+		ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, 
+		NEAR = 2, 
+		FAR = 5000;
+
+	camera = new THREE.PerspectiveCamera( VIEW_ANGLE, ASPECT, NEAR, FAR);
+	camera2 = new THREE.PerspectiveCamera( VIEW_ANGLE, ASPECT, NEAR, FAR);
+
+	group.add( camera );	
+	camera.position.set(0,400,550);
+	camera.lookAt(lookAtPoint);
+
+	scene.add( camera2 );
+	camera2.position.set(0,400,300);
+	camera2.lookAt(scene.position);
+
+		// RENDERER
+	if ( Detector.webgl )
+		renderer = new THREE.WebGLRenderer( {antialias:true} );
+	else
+		renderer = new THREE.CanvasRenderer(); 
+
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	
+	container = document.getElementById( 'ThreeJS' );
+	container.appendChild( renderer.domElement );
+	
+	// EVENTS
+	THREEx.WindowResize(renderer, camera);
+	THREEx.FullScreen.bindKey({ charCode : 'm'.charCodeAt(0) });
+	
+	// CONTROLS
+	controls = new THREE.OrbitControls( camera2, renderer.domElement );
+			
+	// FLOOR
+	var floorTexture = new THREE.ImageUtils.loadTexture( 'images/checkerboard.jpg' );
+	floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; 
+	floorTexture.repeat.set( 1.5, 10 );
+	var floorMaterial = new THREE.MeshPhongMaterial( { color: 0x444444, map: floorTexture, side: THREE.DoubleSide } );
+	var floorGeometry = new THREE.PlaneGeometry(1500, 10000, 10, 10);
+	var floor = new THREE.Mesh(floorGeometry, floorMaterial);
+	floor.position.y = -10.5;
+	floor.position.z = -4750;
+	floor.rotation.x = PI / 2;
+	scene.add(floor);
+	
+	// SKYBOX/FOG
+	var skyBoxGeometry  = new THREE.CubeGeometry( 4000, 4000, 4000 );
+	var skyBoxMaterial  = new THREE.MeshBasicMaterial( { color: 0x000022, side: THREE.BackSide } );
+	var skyBox 			= new THREE.Mesh( skyBoxGeometry, skyBoxMaterial );
+	skyBox.position.z = -1500;
+    
+	
+	////////////
+	// CUSTOM //
+	////////////
+	
+
+	
+////////////////////////
+//Carlbaum edits
+////////////////////////
+	//skeppets geometri
+	var shipLength 	= 200,
+		shipHeight	= 60, 
+		shipWidth 	= 60;
+	var shipGeom = new THREE.CubeGeometry(	shipWidth,
+											shipHeight,
+											shipLength);
+	var	wingGeom 	= new THREE.CubeGeometry( 
+						150,20,100);
+	var shipMat 	= new THREE.MeshPhongMaterial( { color: 0x006464 } );
+	ship 			= new THREE.Mesh( shipGeom, shipMat );
+
+	var rightWing = new THREE.Mesh( wingGeom, shipMat ),
+		leftWing  = new THREE.Mesh( wingGeom, shipMat );
+
+	ship.position.y = shipHeight;
+
+	leftWing.position.x = -30;
+	leftWing.rotation.y = PI * 1/3.2;
+
+	rightWing.position.x = 30;
+	rightWing.rotation.y = -PI * 1/3.2;
+
+	//skeppet övrigt
+	maxRot = PI /3; //skeppets maximala lutning
+	xMax = 625;
+	
+
+	// LIGHTS
+	var lightMain	= new THREE.SpotLight(0xffee00),
+		lightFront	= new THREE.SpotLight(0xfffff),
+		lightRear	= new THREE.PointLight(0xff2200);
+	
+	lightMain.position.set( 0, 5000, 0);
+	lightMain.target = group;
+	lightMain.castShadow = true;
+	/*lightMain.shadowMapWidth = 1024; 
+	lightMain.shadowMapHeight = 1024; 
+	lightMain.shadowCameraNear = 500; 
+	lightMain.shadowCameraFar = 4000; 
+	lightMain.shadowCameraFov = 30; */
+
+	lightFront.position.set( 0, 0, -shipLength/2);
+	lightFront.target = new THREE.Vector3(0,0,-200);
+	lightFront.castShadow = true; 
+	/*lightFront.shadowMapWidth = 1024; 
+	lightFront.shadowMapHeight = 1024; 
+	lightFront.shadowCameraNear = 500; 
+	lightFront.shadowCameraFar = 4000; 
+	lightFront.shadowCameraFov = 30; */
+
+	lightRear.position.set( 0, shipLength/2+10, 0);
+	lightRear.intensity = 0.3;
+
+
+	//skapa partikelsystem
+	this.engine = new ParticleEngine();
+	engine.setValues( Examples.carlbaum );
+	engine.initialize(); // jag tog bort scene.add från ParticleEngine.js
+	engine.positionBase.z = shipLength/2;
+
+
+	//lägg till objekt i scenen/gruppen etc
+	ship.add( leftWing );
+	ship.add( rightWing );
+	//ship.add( lightFront );
+	//ship.add( lightRear );	
+	ship.add( engine.particleMesh );
+	
+	group.add( ship );
+	group.add( skyBox );
+	group.add( lightMain );
+
+	scene.add( group );
+
+	// GUI for experimenting with parameters
+/*
+	gui = new dat.GUI();	
+	parameters = 
+	{
+		fountain:   function() { restartEngine( Examples.fountain   ); },
+		startunnel: function() { restartEngine( Examples.startunnel ); },		
+		starfield:  function() { restartEngine( Examples.starfield  ); },		
+		fireflies:  function() { restartEngine( Examples.fireflies  ); },		
+		clouds:     function() { restartEngine( Examples.clouds     ); },		
+		smoke:      function() { restartEngine( Examples.smoke      ); },		
+		fireball:   function() { restartEngine( Examples.fireball   ); },		
+		candle:     function() { restartEngine( Examples.candle     ); },		
+		rain:       function() { restartEngine( Examples.rain       ); },		
+		snow:       function() { restartEngine( Examples.snow       ); },		
+		firework:   function() { restartEngine( Examples.firework   ); }		
+	};
+
+	gui.add( parameters, 'fountain'   ).name("Star Fountain");
+	gui.add( parameters, 'startunnel' ).name("Star Tunnel");
+	gui.add( parameters, 'starfield'  ).name("Star Field");
+	gui.add( parameters, 'fireflies'  ).name("Fireflies");
+	gui.add( parameters, 'clouds'     ).name("Clouds");
+	gui.add( parameters, 'smoke'      ).name("Smoke");
+	gui.add( parameters, 'fireball'   ).name("Fireball");
+	gui.add( parameters, 'candle'     ).name("Candle");
+	gui.add( parameters, 'rain'       ).name("Rain");
+	gui.add( parameters, 'snow'       ).name("Snow");
+	gui.add( parameters, 'firework'   ).name("Firework");
+	
+	gui.open();	
+	*/
+}
+
+function animate() 
+{
+    requestAnimationFrame( animate );
+	render();		
+	update();
+}
+/*
+function restartEngine(parameters)
+{
+	resetCamera();
+	
+	engine.destroy();
+	engine = new ParticleEngine();
+	engine.setValues( parameters );
+	engine.initialize();
+}
+
+function resetCamera()
+{
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 0.1, FAR = 20000;
+	camera2 = new THREE.PerspectiveCamera( VIEW_ANGLE, ASPECT, NEAR, FAR);
+	//camera.up = new THREE.Vector3( 0, 0, 1 );
+	camera2.position.set(0,200,400);
+	camera2.lookAt(scene.position);	
+	scene.add(camera2);
+	
+	controls = new THREE.OrbitControls( camera2, renderer.domElement );
+	THREEx.WindowResize(renderer, camera);
+}
+*/
+
+function update()
+{
+/*
+	if ( keyboard.pressed("1") ) 
+		restartEngine( fountain );
+	if ( keyboard.pressed("2") ) 
+		restartEngine( startunnel );
+	if ( keyboard.pressed("3") ) 
+		restartEngine( starfield );
+	if ( keyboard.pressed("4") ) 
+		restartEngine( fireflies );
+		
+	if ( keyboard.pressed("5") ) 
+		restartEngine( clouds );
+	if ( keyboard.pressed("6") ) 
+		restartEngine( smoke );
+		
+	if ( keyboard.pressed("7") ) 
+		restartEngine( fireball );
+	if ( keyboard.pressed("8") ) 
+		restartEngine( Examples.candle );
+		
+	if ( keyboard.pressed("9") ) 
+		restartEngine( rain );
+	if ( keyboard.pressed("0") ) 
+		restartEngine( snow );
+		
+	if ( keyboard.pressed("q") ) 
+		restartEngine( firework );
+	// also: reset camera angle
+*/
+
+	/*var relativeCameraOffset = new THREE.Vector3(0,400,550);
+
+	var cameraOffset = relativeCameraOffset.applyMatrix4( ship.matrixWorld );
+	
+	var newVec = new THREE.Vector3(	0, 0, ship.position.z + lookAtPoint.z);
+
+	camera.position.z = cameraOffset.z;
+	camera.lookAt( newVec);
+*/
+	//controls.update();
+	
+	var dt = clock.getDelta();
+	
+
+
+	engine.update( dt * 0.5 );	
+
+	if ( keyboard.pressed("W") ) 
+		group.position.z -= dt*800;
+
+	if ( keyboard.pressed("S") ) 
+		group.position.z += dt*400;
+
+	//skeppets lutning
+	if ( keyboard.pressed("D") ||  keyboard.pressed("A") ) {
+		if ( keyboard.pressed("D") &&   keyboard.pressed("A") ) { //om båda knapparna hålls in -> räknas som dem är släppta
+			stabilizeShip(dt, ship.rotation.z, 1.0);
+		}
+
+		else if ( keyboard.pressed("D") ) {
+					
+			if ( ship.position.x >= xMax -50) {
+				ship.rotation.z = stabilizeShip(dt, ship.rotation.z, 5.0);
+			}
+			else
+				ship.rotation.z -= dt * PI * 2/3;
+			if(ship.rotation.z < -maxRot)
+				ship.rotation.z = -maxRot;
+		}
+
+		else if ( keyboard.pressed("A") ) {
+			if ( ship.position.x <= -xMax +100) {
+				ship.rotation.z = stabilizeShip(dt, ship.rotation.z, 5.0);
+			}
+			else
+				ship.rotation.z += dt * PI * 2/3;
+			if(ship.rotation.z > maxRot ) {
+				ship.rotation.z = maxRot ;
+			}	
+		}
+	}
+	else if (ship.rotation.z != 0 ){
+		//stabilizeShip1( dt );
+		//stabilizeShip1( ship.rotation.z );
+		ship.rotation.z = stabilizeShip( dt, ship.rotation.z ,1);
+		//stabilizeShip2( dt, ship.rotation.z );
+	}
+
+	if ( keyboard.pressed("space") ) {
+		if(jumpTime == 0.0) { //if jump is not in progress
+			jump();
+		}
+	}
+
+	//skeppets x-position styrs av lutningen
+	ship.position.x -= ship.rotation.z*20;
+	if ( Math.abs(ship.position.x) >= xMax ) {
+		ship.position.x = ship.position.x/Math.abs(ship.position.x) * xMax;
+	}
+		
+
+
+	if (jumpTime != 0.0 ) {
+		if (jumpClock.getElapsedTime() >= 1.0) {
+			jumpClock.stop();
+			jumpTime=0.0;
+			ship.position.y =40;
+			ship.rotation.x = 0;
+		}
+		else {
+			jumpTime = jumpClock.getElapsedTime();
+			ship.position.y = 75 * Math.sin( 1 * PI* jumpTime) + 40;
+			
+			/*if( (jumpTime > 0.25 && jumpTime < 0.5) || (jumpTime > 0.75 && jumpTime < 1.0) ) {
+				ship.rotation.x = stabilizeShip( dt, ship.rotation.x, 100);
+			}	
+*/
+				ship.rotation.x = PI/16 *Math.sin( 2 * PI *jumpTime);
+		}
+
+	}
+	
+}
+
+function stabilizeShip(dt,axis,factor)
+{
+	if(axis < 0 ) {
+		axis -= dt * PI * axis * factor;
+	}
+	else if (axis > 0 )
+		axis -= dt * PI * axis * factor;		
+	else
+		axis = 0 ;
+	return axis;
+}
+
+function jump()
+{
+	jumpClock = new THREE.Clock();
+	jumpClock.start();
+	console.log("timer started" )
+	jumpTime = jumpClock.getElapsedTime();
+	
+}
+
+function render() 
+{
+	renderer.render( scene, camera );
+}
+
+</script>
+
+
+
+
+
+
+</body>
+
+</html>
